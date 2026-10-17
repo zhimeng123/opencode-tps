@@ -1,7 +1,17 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/context"
 import type { RGBA } from "@opentui/core"
+import { appendFileSync } from "node:fs"
 import { createMemo, createSignal } from "solid-js"
+
+const DEBUG_FILE = "/tmp/opencode-tps-events.ndjson"
+function dbg(payload: unknown): void {
+  try {
+    appendFileSync(DEBUG_FILE, JSON.stringify(payload) + "\n")
+  } catch {
+    // debugging only
+  }
+}
 
 /**
  * opencode-tps — a live tokens-per-second meter for the OpenCode TUI.
@@ -158,6 +168,15 @@ const plugin = {
       }
       state.samples.push({ tokens: estimateTokens(delta), ts: now })
       recordPeakFloor(state, now)
+      dbg({
+        t: "delta",
+        mid: messageID,
+        midType: typeof messageID,
+        samples: state.samples.length,
+        age: now - state.response.firstDeltaTs,
+        max: state.response.maxTps,
+        min: state.response.minTps,
+      })
       bump()
     }
 
@@ -172,13 +191,21 @@ const plugin = {
     const finishResponse = (sessionID: string) => {
       const state = states.get(sessionID)
       if (!state) return
+      dbg({ t: "idle", sessionID, max: state.response.maxTps, min: state.response.minTps })
       state.response.frozen = true
       state.samples = []
       bump()
     }
 
+    let loggedRaw = false
     const unsubscribers: Array<() => void> = [
-      context.data.on("session.text.delta", (event) => track(event.data.sessionID, event.data.assistantMessageID, event.data.delta)),
+      context.data.on("session.text.delta", (event) => {
+        if (!loggedRaw) {
+          loggedRaw = true
+          dbg({ t: "raw", dataKeys: Object.keys(event.data ?? {}), sample: event.data })
+        }
+        track(event.data.sessionID, event.data.assistantMessageID, event.data.delta)
+      }),
       context.data.on("session.tool.called", (event) => clearSamples(event.data.sessionID)),
       context.data.on("session.tool.success", (event) => clearSamples(event.data.sessionID)),
       context.data.on("session.tool.failed", (event) => clearSamples(event.data.sessionID)),
