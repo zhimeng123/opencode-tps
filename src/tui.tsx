@@ -1,17 +1,8 @@
 /** @jsxImportSource @opentui/solid */
+import type { SessionMessageInfo } from "@opencode/client"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { RGBA } from "@opentui/core"
-import { appendFileSync } from "node:fs"
 import { createMemo, createSignal } from "solid-js"
-
-const DEBUG_FILE = "/tmp/opencode-tps-events.ndjson"
-function dbg(payload: unknown): void {
-  try {
-    appendFileSync(DEBUG_FILE, JSON.stringify(payload) + "\n")
-  } catch {
-    // debugging only
-  }
-}
 
 /**
  * opencode-tps — a live tokens-per-second meter for the OpenCode TUI.
@@ -21,14 +12,14 @@ function dbg(payload: unknown): void {
  *
  *   tok/s <now>   avg <session>   ↑<max>   ↓<min>
  *
- *   - "now"  is the live generation rate over a rolling window.
- *   - "avg"  is the whole session's output tokens over generation time.
- *   - "max"  is the peak rate of the most recent response.
- *   - "min"  is the floor rate of the most recent response.
+ *   - "now" is the live generation rate over a rolling window.
+ *   - "avg" is the whole session's output tokens over generation time.
+ *   - "max" is the peak rate of the most recent response.
+ *   - "min" is the floor rate of the most recent response.
  *
- * Rates are inferred from streamed text because the provider API exposes no
- * per-second token counts. When a response completes the live window is
- * dropped; the peak/floor stay frozen so they can be read after the fact.
+ * The provider API exposes no per-second token counts, so live rates are
+ * inferred from streamed text. When a response completes the live window is
+ * dropped; its peak/floor stay frozen so they can be read afterwards.
  */
 
 const SAMPLE_WINDOW_MS = 5000
@@ -124,6 +115,17 @@ function recordPeakFloor(state: SessionState, now: number): void {
   if (live < state.response.minTps) state.response.minTps = live
 }
 
+/** Real generation rate of a completed assistant message, or -1. */
+function messageRate(message: SessionMessageInfo): number {
+  if (message.type !== "assistant") return -1
+  const output = message.tokens?.output
+  const created = message.time?.created
+  const completed = message.time?.completed
+  if (typeof output !== "number" || output <= 0) return -1
+  if (typeof created !== "number" || typeof completed !== "number" || completed <= created) return -1
+  return (output / (completed - created)) * 1000
+}
+
 function sessionAverageTps(context: Context, sessionID: string): number {
   const messages = context.data.session.message.list(sessionID) ?? []
   let tokens = 0
@@ -140,6 +142,15 @@ function sessionAverageTps(context: Context, sessionID: string): number {
   }
   if (durationMs <= 0) return -1
   return (tokens / durationMs) * 1000
+}
+
+function latestResponseTps(context: Context, sessionID: string): number {
+  const messages = context.data.session.message.list(sessionID) ?? []
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const rate = messageRate(messages[i])
+    if (rate > 0) return rate
+  }
+  return -1
 }
 
 function themeColor(context: Context): RGBA | undefined {
@@ -171,15 +182,6 @@ const plugin = {
       }
       state.samples.push({ tokens: estimateTokens(delta), ts: now })
       recordPeakFloor(state, now)
-      dbg({
-        t: "delta",
-        mid: messageID,
-        midType: typeof messageID,
-        samples: state.samples.length,
-        age: now - state.response.firstDeltaTs,
-        max: state.response.maxTps,
-        min: state.response.minTps,
-      })
       bump()
     }
 
@@ -194,21 +196,17 @@ const plugin = {
     const finishResponse = (sessionID: string) => {
       const state = states.get(sessionID)
       if (!state) return
-      dbg({ t: "idle", sessionID, max: state.response.maxTps, min: state.response.minTps })
       state.response.frozen = true
       state.samples = []
       bump()
     }
 
-    let loggedRaw = false
+    // The event bus can deliver the same event more than once; the id is stable,
+    // so drop repeats rather than double-counting tokens.
     const seenEvents = new Set<string>()
     const unsubscribers: Array<() => void> = [
       context.data.on("session.text.delta", (event) => {
         const id = (event as { id?: string }).id
-        if (!loggedRaw) {
-          loggedRaw = true
-          dbg({ t: "raw", id, eventKeys: Object.keys(event ?? {}), dataKeys: Object.keys(event.data ?? {}), sample: event.data })
-        }
         if (id) {
           if (seenEvents.has(id)) return
           seenEvents.add(id)
@@ -248,8 +246,17 @@ const plugin = {
           const status = context.data.session.status(sessionID)
           const live = state ? liveTps(state, status) : -1
           const average = sessionAverageTps(context, sessionID)
-          const max = state?.response.maxTps ?? -1
-          const min = state?.response.minTps ?? -1
+          let max = state?.response.maxTps ?? -1
+          let min = state?.response.minTps ?? -1
+          // A response can be too short to sample a peak/floor. Once it is idle,
+          // fall back to its real average so the slots are not left empty.
+          if ((!Number.isFinite(max) || !Number.isFinite(min)) && status === "idle") {
+            const fallback = latestResponseTps(context, sessionID)
+            if (fallback > 0) {
+              if (!Number.isFinite(max)) max = fallback
+              if (!Number.isFinite(min)) min = fallback
+            }
+          }
           return `tok/s ${formatTps(live)}  avg ${formatTps(average)}  ↑${formatTps(max)}  ↓${formatTps(min)}`
         })
         return <text fg={color}>{display()}</text>

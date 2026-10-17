@@ -17,7 +17,7 @@ tok/s 42.1  avg 35.8  ↑51.0  ↓12.3
 - The **average** uses real output-token counts (`tokens.output`) from completed responses over their generation time.
 - The **peak/floor** track the latest response while it streams, then freeze so they stay readable until the next response starts.
 
-The provider API does not expose per-second token counts, so live readings are inferred from streamed text (~5.5 bytes per token) and only accumulate the time actually spent streaming (tool calls and warm-up are excluded from the rate).
+The provider API does not expose per-second token counts, so live readings are inferred from streamed text (~5.5 bytes per token). Only time actually spent streaming counts toward the rate: tool calls are excluded, and a response that is too short to sample falls back to its real average so the peak/floor slots are not left empty.
 
 ## Requirements
 
@@ -43,6 +43,18 @@ Restart the TUI. To install from a local checkout instead:
 ```
 
 Remove any V1 `tui.json` entry for this plugin — V1 TUI plugins do not run on V2.
+
+### Updating
+
+The CLI caches a git dependency by URL, so pushing to the repo is not enough on
+its own. To pull a newer revision, pin the desired commit in the specifier:
+
+```json
+{ "plugins": ["opencode-tps@git+https://github.com/zhimeng123/opencode-tps.git#<commit>"] }
+```
+
+then delete the cached install under `~/.cache/opencode/npm/git-opencode-tps-*`
+and restart the TUI.
 
 ## How it works
 

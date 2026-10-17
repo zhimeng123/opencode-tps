@@ -43,10 +43,15 @@ Placeholder when there is nothing to show: `tok/s -`.
   step is required.
 - **Session average**: real `tokens.output` summed over assistant messages divided
   by their `completed - created` duration.
-- **Latest response peak/floor**: running extremes of the live reading, frozen on
-  `session.idle`.
-- **Tool gaps excluded**: live samples are cleared on `session.tool.*`, and a 3s
-  warm-up suppresses the slow first samples.
+- **Latest response peak/floor**: running extremes of the live reading, keyed by
+  the streamed assistant message id and frozen on `session.idle`. Telemetry showed
+  short responses arrive as two or three large deltas a few hundred ms apart, so
+  the gate is "at least two samples and 250ms", not a multi-second warm-up.
+- **Short responses**: if a response completes without a sampleable span, the
+  peak/floor fall back to that response's real average rather than showing `-`.
+- **Tool gaps excluded**: live samples are cleared on `session.tool.*`.
+- **Duplicate events**: the event bus can deliver the same `session.text.delta`
+  more than once; events are deduplicated by their stable `id`.
 
 ## Verification
 
