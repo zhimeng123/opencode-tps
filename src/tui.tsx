@@ -10,12 +10,12 @@ import { createMemo, createSignal } from "solid-js"
  * Rendered at the right edge of the prompt footer for the current session, it
  * shows four numbers while a response streams:
  *
- *   tok/s <now>   avg <session>   ↑<max>   ↓<min>
+ *   tok/s <now> avg <session> ↑<max> ↓<min>
  *
  * The "now" segment only exists while tokens are arriving; once the session is
  * idle the meter shows just:
  *
- *   avg <session>   ↑<max>   ↓<min>
+ *   avg <session> ↑<max> ↓<min>
  *
  *   - "now" is the live generation rate over a rolling window.
  *   - "avg" is the whole session's output tokens over model time only, i.e. from
@@ -287,7 +287,7 @@ const plugin = {
           parts.push(`avg ${formatTps(average)}`)
           parts.push(`↑${formatTps(max)}`)
           parts.push(`↓${formatTps(min)}`)
-          return parts.join("  ")
+          return parts.join(" ")
         })
         return <text fg={color}>{display()}</text>
       },

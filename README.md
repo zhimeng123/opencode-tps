@@ -3,8 +3,8 @@
 A live **tokens-per-second** (`tok/s`) meter for the [OpenCode](https://opencode.ai) TUI, rendered at the right edge of the prompt footer.
 
 ```
-tok/s 42.1  avg 35.8  ↑51.0  ↓12.3     # while a response is streaming
-             avg 35.8  ↑51.0  ↓12.3     # once the session is idle
+tok/s 42.1 avg 35.8 ↑51.0 ↓12.3     # while a response is streaming
+avg 35.8 ↑51.0 ↓12.3                # once the session is idle
 ```
 
 | Value | Meaning | Scope |
