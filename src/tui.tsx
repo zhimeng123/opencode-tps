@@ -95,6 +95,20 @@ function liveTps(state: SessionState, status: "idle" | "running"): number {
   return (tokens / duration) * 1000
 }
 
+/**
+ * Update the current response's peak/floor from the live reading. Called on every
+ * delta (so it cannot be missed between timer ticks) and on each tick. Warm-up
+ * samples are ignored so the slow first tokens do not set an artificial floor.
+ */
+function recordPeakFloor(state: SessionState, now: number): void {
+  if (state.response.frozen) return
+  if (now - state.response.firstDeltaTs < WARMUP_MS) return
+  const live = liveTps(state, "running")
+  if (live <= 0) return
+  if (live > state.response.maxTps) state.response.maxTps = live
+  if (live < state.response.minTps) state.response.minTps = live
+}
+
 function sessionAverageTps(context: Context, sessionID: string): number {
   const messages = context.data.session.message.list(sessionID) ?? []
   let tokens = 0
@@ -137,6 +151,7 @@ const plugin = {
       // A frozen response belongs to the previous turn: this delta starts a new one.
       if (state.response.frozen) state.response = newResponse(now)
       state.samples.push({ tokens: estimateTokens(delta), ts: now })
+      recordPeakFloor(state, now)
       bump()
     }
 
@@ -165,16 +180,15 @@ const plugin = {
     ]
 
     const interval = setInterval(() => {
-      const now = Date.now()
-      for (const [sessionID, state] of states) {
-        state.samples = state.samples.filter((sample) => sample.ts >= now - SAMPLE_WINDOW_MS)
-        if (state.response.frozen) continue
-        if (now - state.response.firstDeltaTs < WARMUP_MS) continue
-        const live = liveTps(state, context.data.session.status(sessionID))
-        if (live > 0) {
-          if (live > state.response.maxTps) state.response.maxTps = live
-          if (live < state.response.minTps) state.response.minTps = live
+      try {
+        const now = Date.now()
+        for (const [sessionID, state] of states) {
+          state.samples = state.samples.filter((sample) => sample.ts >= now - SAMPLE_WINDOW_MS)
+          if (context.data.session.status(sessionID) === "idle") continue
+          recordPeakFloor(state, now)
         }
+      } catch {
+        // A failed data read must never tear down the ticker.
       }
       bump()
     }, 1000)
