@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-tps",
+  "version": "0.1.0",
+  "description": "Live tokens-per-second (tok/s) meter for the OpenCode TUI: current rate, session average, and the latest response's peak and floor.",
+  "type": "module",
+  "license": "MIT",
+  "author": "zhimeng123",
+  "homepage": "https://github.com/zhimeng123/opencode-tps#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhimeng123/opencode-tps.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zhimeng123/opencode-tps/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-tui",
+    "opencode-tps",
+    "tps",
+    "tokens-per-second",
+    "tui"
+  ],
+  "exports": {
+    "./tui": {
+      "import": "./src/tui.tsx"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "opencode": ">=2.0.0"
+  },
+  "dependencies": {
+    "@opentui/solid": ">=0.5.0",
+    "solid-js": ">=1.9.0"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.0.32",
+    "@opencode/theme": "2.0.32",
+    "@opentui/core": "^0.5.17",
+    "@opentui/solid": "^0.5.17",
+    "solid-js": "^1.9.0",
+    "typescript": "^5.9.0"
+  }
+}

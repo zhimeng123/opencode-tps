@@ -1,0 +1,6 @@
+node_modules/
+*.tgz
+.ref/
+opencode.json
+dist/
+.DS_Store

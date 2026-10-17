@@ -1,0 +1,56 @@
+# opencode-tps — design
+
+## Intent
+
+Restore a live tokens-per-second (`tok/s`) readout in the OpenCode V2 TUI at the
+right edge of the prompt footer. The original `@mesaleh/opencode-tps` is a V1 TUI
+plugin and cannot run on V2, so this is an independent V2 implementation.
+
+## Display (approved scope)
+
+Four numbers, all for the current session:
+
+| Field | Meaning | Scope |
+|-------|---------|-------|
+| `tok/s` | current generation rate | live rolling window (5s) |
+| `avg` | average generation rate | whole session |
+| `↑` | peak rate | latest response |
+| `↓` | floor rate | latest response |
+
+Placeholder when there is nothing to show: `tok/s -`.
+
+## Non-goals
+
+- No server-side plugin / no model transforms. TUI-only.
+- No npm publication. Distribution is the public GitHub repo.
+- No cross-session or cross-message history UI.
+
+## Constraints
+
+- OpenCode V2 plugin API: default export must be `{ id: string, setup(context) }`.
+- Slot: `prompt.footer.status` (V2 renamed the V1 `session_prompt_right`).
+- Events differ from V1: `session.text.delta` (not `message.part.delta`),
+  `session.tool.*`, `session.idle`.
+- Live rate must be inferred from streamed text; the API exposes only per-message
+  output-token totals.
+
+## Decisions
+
+- **V2 module shape**: default-export a plain object (validated by `id` + `setup`),
+  with type-only imports from `@opencode/plugin/tui`. Avoids a runtime dependency
+  on the resolver-provided module.
+- **Raw `src/tui.tsx` entry**: OpenCode transpiles the `./tui` export, so no build
+  step is required.
+- **Session average**: real `tokens.output` summed over assistant messages divided
+  by their `completed - created` duration.
+- **Latest response peak/floor**: running extremes of the live reading, frozen on
+  `session.idle`.
+- **Tool gaps excluded**: live samples are cleared on `session.tool.*`, and a 3s
+  warm-up suppresses the slow first samples.
+
+## Verification
+
+- Type-check against `@opencode/plugin@2.0.32`.
+- Confirm the plugin passes OpenCode's V2 module validator (loads without
+  `Invalid V2 TUI plugin module`).
+- Visual confirmation in the TUI is done by the maintainer.
