@@ -23,6 +23,10 @@
     "tokens-per-second",
     "tui"
   ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
   "exports": {
     "./tui": {
       "import": "./src/tui.tsx"

@@ -3,22 +3,35 @@
 A live **tokens-per-second** (`tok/s`) meter for the [OpenCode](https://opencode.ai) TUI, rendered at the right edge of the prompt footer.
 
 ```
-tok/s 42.1 avg 35.8 ↑51.0 ↓12.3     # while a response is streaming
-avg 35.8 ↑51.0 ↓12.3                # once the session is idle
+tok/s 88.9 avg 89.0 ↑163 ↓63.0     # while a response is streaming
+avg 89.0 ↑163 ↓63.0                # once the session is idle
 ```
 
 | Value | Meaning | Scope |
 |-------|---------|-------|
-| `tok/s` | current generation rate | live rolling window (shown only while streaming) |
-| `avg` | average model generation rate (tool time excluded) | whole session |
-| `↑` | peak generation rate | latest response |
-| `↓` | floor generation rate | latest response |
+| `tok/s` | generation rate of the reply in flight | current turn (shown only while streaming) |
+| `avg` | average of the values OpenCode prints for each reply | whole session |
+| `↑` | peak burst rate | latest response |
+| `↓` | floor burst rate | latest response |
 
-- The **live** number is smoothed over a rolling 5-second window and goes stale when no tokens arrive.
-- The **average** uses real output-token counts (`tokens.output`) from completed responses divided by **model time only** — from each request until its last streamed token — so tool execution and other waiting does not drag it down.
-- The **peak/floor** track the latest response while it streams, then freeze so they stay readable until the next response starts.
+### Semantics
 
-The provider API does not expose per-second token counts, so live readings are inferred from streamed text (~5.5 bytes per token). Only time actually spent streaming counts toward the rate: tool calls are excluded, and a response that is too short to sample falls back to its real average so the peak/floor slots are not left empty.
+The four numbers come in two families, and the difference is deliberate.
+
+**`tok/s` and `avg` speak OpenCode's language.** At the end of every reply OpenCode prints `· 1m 3s · 88.9 tok/s` in the transcript, computed as
+
+```
+(output + reasoning tokens) ÷ (created → streamed, summed over every step of the turn) × 1000
+```
+
+so tool execution and other waiting never count. `avg` is the **mean of those per-reply values** — each reply counts once, however many tokens it produced. `tok/s` is the same formula applied to the turn in flight: it is approximate while streaming, because the step in flight has to be estimated from the text that has arrived. Once the turn ends the meter drops `tok/s` and OpenCode's own exact number takes over in the transcript.
+
+**`↑` and `↓` are burst extremes.** They describe how fast text actually poured out at its best and worst moment of the latest response, smoothed over a rolling 5-second window. They read much higher than the OpenCode-style values because they ignore time-to-first-token, stalls, tool gaps and reasoning.
+
+- The live number goes stale after 1.5s without a delta; the whole segment is then dropped rather than showing a placeholder.
+- The peak/floor track the latest response while it streams, then freeze so they stay readable until the next response starts.
+
+The provider API exposes no per-second token counts, so the streaming estimate is inferred from the text that has arrived (~5.5 bytes per token). A response too short to sample falls back to its real average so the peak/floor slots are not left empty.
 
 ## Requirements
 
@@ -63,15 +76,16 @@ The plugin is a V2 TUI plugin: it default-exports a definition with an `id` and 
 
 It subscribes to the server event stream and:
 
-1. accumulates `session.text.delta` events into a rolling sample window (estimated tokens + timestamp);
-2. clears the live window on `session.tool.*` so tool-wait time is not counted as slow generation;
-3. freezes the current response's peak/floor and drops the live window on `session.idle`;
-4. reads real output-token counts from the session message list for the session average.
+1. accumulates `session.text.delta` and `session.reasoning.delta` into the turn in flight, so `tok/s` can be measured the way OpenCode measures it;
+2. times the turn from `session.step.started` and banks each finished step on `session.step.ended`, so already-completed steps contribute their real token counts and the clock stops while a tool runs;
+3. keeps a rolling sample window of the streamed *text* for the peak/floor, cleared on `session.tool.*` and frozen on `session.idle`;
+4. walks the session message list to reproduce OpenCode's per-reply readout — turn boundaries are the `idle` marker every execution leaves behind — and averages those for `avg`.
 
 ## Development
 
 ```sh
 npm install
+bun test           # unit tests for the turn and average maths
 npx tsc --noEmit   # type-check against the OpenCode V2 plugin types
 ```
 
