@@ -201,11 +201,18 @@ const plugin = {
     }
 
     let loggedRaw = false
+    const seenEvents = new Set<string>()
     const unsubscribers: Array<() => void> = [
       context.data.on("session.text.delta", (event) => {
+        const id = (event as { id?: string }).id
         if (!loggedRaw) {
           loggedRaw = true
-          dbg({ t: "raw", dataKeys: Object.keys(event.data ?? {}), sample: event.data })
+          dbg({ t: "raw", id, eventKeys: Object.keys(event ?? {}), dataKeys: Object.keys(event.data ?? {}), sample: event.data })
+        }
+        if (id) {
+          if (seenEvents.has(id)) return
+          seenEvents.add(id)
+          if (seenEvents.size > 8192) seenEvents.clear()
         }
         track(event.data.sessionID, event.data.assistantMessageID, event.data.delta)
       }),
