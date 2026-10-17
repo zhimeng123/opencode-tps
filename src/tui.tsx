@@ -34,6 +34,7 @@ type Sample = {
 }
 
 type ResponseStats = {
+  messageID: string
   firstDeltaTs: number
   maxTps: number
   minTps: number
@@ -45,8 +46,9 @@ type SessionState = {
   response: ResponseStats
 }
 
-function newResponse(now: number): ResponseStats {
+function newResponse(now: number, messageID: string): ResponseStats {
   return {
+    messageID,
     firstDeltaTs: now,
     maxTps: Number.NEGATIVE_INFINITY,
     minTps: Number.POSITIVE_INFINITY,
@@ -55,7 +57,7 @@ function newResponse(now: number): ResponseStats {
 }
 
 function newState(now: number): SessionState {
-  return { samples: [], response: newResponse(now) }
+  return { samples: [], response: newResponse(now, "") }
 }
 
 function estimateTokens(text: string): number {
@@ -139,17 +141,21 @@ const plugin = {
     const [version, setVersion] = createSignal(0)
     const bump = () => setVersion((value) => value + 1)
 
-    const track = (sessionID: string, delta: string) => {
+    const track = (sessionID: string, messageID: string, delta: string) => {
       if (!sessionID || typeof delta !== "string" || delta.length === 0) return
-      if (context.data.session.status(sessionID) === "idle") return
       const now = Date.now()
       let state = states.get(sessionID)
       if (!state) {
         state = newState(now)
         states.set(sessionID, state)
       }
-      // A frozen response belongs to the previous turn: this delta starts a new one.
-      if (state.response.frozen) state.response = newResponse(now)
+      // Each assistant message is its own response. A session can flap to idle
+      // between text blocks, so key the response on the message id instead of on
+      // idle — otherwise the peak/floor get wiped by the final short block.
+      if (state.response.messageID !== messageID) {
+        state.response = newResponse(now, messageID)
+        state.samples = []
+      }
       state.samples.push({ tokens: estimateTokens(delta), ts: now })
       recordPeakFloor(state, now)
       bump()
@@ -172,7 +178,7 @@ const plugin = {
     }
 
     const unsubscribers: Array<() => void> = [
-      context.data.on("session.text.delta", (event) => track(event.data.sessionID, event.data.delta)),
+      context.data.on("session.text.delta", (event) => track(event.data.sessionID, event.data.assistantMessageID, event.data.delta)),
       context.data.on("session.tool.called", (event) => clearSamples(event.data.sessionID)),
       context.data.on("session.tool.success", (event) => clearSamples(event.data.sessionID)),
       context.data.on("session.tool.failed", (event) => clearSamples(event.data.sessionID)),
