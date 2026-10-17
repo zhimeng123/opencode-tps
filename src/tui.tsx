@@ -8,9 +8,14 @@ import { createMemo, createSignal } from "solid-js"
  * opencode-tps — a live tokens-per-second meter for the OpenCode TUI.
  *
  * Rendered at the right edge of the prompt footer for the current session, it
- * shows four numbers:
+ * shows four numbers while a response streams:
  *
  *   tok/s <now>   avg <session>   ↑<max>   ↓<min>
+ *
+ * The "now" segment only exists while tokens are arriving; once the session is
+ * idle the meter shows just:
+ *
+ *   avg <session>   ↑<max>   ↓<min>
  *
  *   - "now" is the live generation rate over a rolling window.
  *   - "avg" is the whole session's output tokens over generation time.
@@ -241,7 +246,7 @@ const plugin = {
         const color = themeColor(context)
         const display = createMemo(() => {
           version()
-          if (!sessionID) return "tok/s -"
+          if (!sessionID) return ""
           const state = states.get(sessionID)
           const status = context.data.session.status(sessionID)
           const live = state ? liveTps(state, status) : -1
@@ -257,7 +262,14 @@ const plugin = {
               if (!Number.isFinite(min)) min = fallback
             }
           }
-          return `tok/s ${formatTps(live)}  avg ${formatTps(average)}  ↑${formatTps(max)}  ↓${formatTps(min)}`
+          // The live rate only has meaning while tokens are arriving; when idle
+          // the whole segment is dropped rather than showing a placeholder.
+          const parts: string[] = []
+          if (live > 0) parts.push(`tok/s ${formatTps(live)}`)
+          parts.push(`avg ${formatTps(average)}`)
+          parts.push(`↑${formatTps(max)}`)
+          parts.push(`↓${formatTps(min)}`)
+          return parts.join("  ")
         })
         return <text fg={color}>{display()}</text>
       },
