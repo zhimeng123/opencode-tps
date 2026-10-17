@@ -10,12 +10,12 @@ tok/s 42.1  avg 35.8  ↑51.0  ↓12.3     # while a response is streaming
 | Value | Meaning | Scope |
 |-------|---------|-------|
 | `tok/s` | current generation rate | live rolling window (shown only while streaming) |
-| `avg` | average generation rate | whole session |
+| `avg` | average model generation rate (tool time excluded) | whole session |
 | `↑` | peak generation rate | latest response |
 | `↓` | floor generation rate | latest response |
 
 - The **live** number is smoothed over a rolling 5-second window and goes stale when no tokens arrive.
-- The **average** uses real output-token counts (`tokens.output`) from completed responses over their generation time.
+- The **average** uses real output-token counts (`tokens.output`) from completed responses divided by **model time only** — from each request until its last streamed token — so tool execution and other waiting does not drag it down.
 - The **peak/floor** track the latest response while it streams, then freeze so they stay readable until the next response starts.
 
 The provider API does not expose per-second token counts, so live readings are inferred from streamed text (~5.5 bytes per token). Only time actually spent streaming counts toward the rate: tool calls are excluded, and a response that is too short to sample falls back to its real average so the peak/floor slots are not left empty.

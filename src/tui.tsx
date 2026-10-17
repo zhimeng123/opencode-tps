@@ -18,7 +18,8 @@ import { createMemo, createSignal } from "solid-js"
  *   avg <session>   ↑<max>   ↓<min>
  *
  *   - "now" is the live generation rate over a rolling window.
- *   - "avg" is the whole session's output tokens over generation time.
+ *   - "avg" is the whole session's output tokens over model time only, i.e. from
+ *     each request until its last streamed token; tool execution is excluded.
  *   - "max" is the peak rate of the most recent response.
  *   - "min" is the floor rate of the most recent response.
  *
@@ -120,15 +121,33 @@ function recordPeakFloor(state: SessionState, now: number): void {
   if (live < state.response.minTps) state.response.minTps = live
 }
 
-/** Real generation rate of a completed assistant message, or -1. */
+/**
+ * Time the model actually spent producing one assistant message.
+ *
+ * `created → streamed` covers the request round-trip and token streaming but stops
+ * at the last token, so tool execution that follows in the same turn (which is why
+ * the message only reaches `completed` much later) does not count. When a provider
+ * never reports `streamed`, fall back to the whole message lifetime.
+ */
+function modelDurationMs(time: { created: number; streamed?: number; completed?: number } | undefined): number {
+  if (!time) return -1
+  const created = time.created
+  if (typeof created !== "number") return -1
+  const streamed = time.streamed
+  if (typeof streamed === "number" && streamed > created) return streamed - created
+  const completed = time.completed
+  if (typeof completed === "number" && completed > created) return completed - created
+  return -1
+}
+
+/** Real model-only generation rate of a completed assistant message, or -1. */
 function messageRate(message: SessionMessageInfo): number {
   if (message.type !== "assistant") return -1
   const output = message.tokens?.output
-  const created = message.time?.created
-  const completed = message.time?.completed
   if (typeof output !== "number" || output <= 0) return -1
-  if (typeof created !== "number" || typeof completed !== "number" || completed <= created) return -1
-  return (output / (completed - created)) * 1000
+  const durationMs = modelDurationMs(message.time)
+  if (durationMs <= 0) return -1
+  return (output / durationMs) * 1000
 }
 
 function sessionAverageTps(context: Context, sessionID: string): number {
@@ -138,12 +157,11 @@ function sessionAverageTps(context: Context, sessionID: string): number {
   for (const message of messages) {
     if (message.type !== "assistant") continue
     const output = message.tokens?.output
-    const created = message.time?.created
-    const completed = message.time?.completed
     if (typeof output !== "number" || output <= 0) continue
-    if (typeof created !== "number" || typeof completed !== "number" || completed <= created) continue
+    const modelMs = modelDurationMs(message.time)
+    if (modelMs <= 0) continue
     tokens += output
-    durationMs += completed - created
+    durationMs += modelMs
   }
   if (durationMs <= 0) return -1
   return (tokens / durationMs) * 1000

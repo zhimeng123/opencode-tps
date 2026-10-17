@@ -42,7 +42,9 @@ Placeholder when there is nothing to show: `tok/s -`.
 - **Raw `src/tui.tsx` entry**: OpenCode transpiles the `./tui` export, so no build
   step is required.
 - **Session average**: real `tokens.output` summed over assistant messages divided
-  by their `completed - created` duration.
+  by pure model time — `created → streamed`, i.e. the request round-trip stopping at
+  the last streamed token. Verified against a tool-heavy session: this reads 31 tok/s
+  where `completed - created` (which includes tool execution) reads 15 tok/s.
 - **Latest response peak/floor**: running extremes of the live reading, keyed by
   the streamed assistant message id and frozen on `session.idle`. Telemetry showed
   short responses arrive as two or three large deltas a few hundred ms apart, so
