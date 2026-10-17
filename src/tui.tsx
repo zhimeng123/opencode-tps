@@ -33,7 +33,7 @@ function dbg(payload: unknown): void {
 
 const SAMPLE_WINDOW_MS = 5000
 const LIVE_STALE_MS = 1500
-const WARMUP_MS = 3000
+const MIN_RECORD_MS = 250
 const SINGLE_SAMPLE_MIN_MS = 250
 const SINGLE_SAMPLE_MAX_MS = 1000
 const BYTES_PER_TOKEN = 5.5
@@ -109,12 +109,15 @@ function liveTps(state: SessionState, status: "idle" | "running"): number {
 
 /**
  * Update the current response's peak/floor from the live reading. Called on every
- * delta (so it cannot be missed between timer ticks) and on each tick. Warm-up
- * samples are ignored so the slow first tokens do not set an artificial floor.
+ * delta (so it cannot be missed between timer ticks) and on each tick. The very
+ * first delta is skipped: a single chunk cannot be turned into a rate without a
+ * duration, and providers can deliver an entire short response in a couple of
+ * large chunks only a few hundred milliseconds apart.
  */
 function recordPeakFloor(state: SessionState, now: number): void {
   if (state.response.frozen) return
-  if (now - state.response.firstDeltaTs < WARMUP_MS) return
+  if (state.samples.length < 2) return
+  if (now - state.response.firstDeltaTs < MIN_RECORD_MS) return
   const live = liveTps(state, "running")
   if (live <= 0) return
   if (live > state.response.maxTps) state.response.maxTps = live
